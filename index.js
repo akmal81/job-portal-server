@@ -41,17 +41,17 @@ async function run() {
         // do not load all data in home page
 
         // job related api
-        //  all data
+        //  all data or get data by hr_email address
         app.get('/jobs', async (req, res) => {
-            const allJobs = await allJobsCollection.find().toArray();
-            res.send(allJobs);
+            const email = req.query.email;
+            let query = {};
+            if (email) {
+                query = { hr_email: email }
+            }
+            const cursor = allJobsCollection.find(query);
+            const result = await cursor.toArray();
+            res.send(result);
         });
-
-        app.post('/jobs', async(req, res)=>{
-            const newJob = req.body;
-            const result = await allJobsCollection.insertOne(newJob);
-            res.send(result)
-        })
 
         // get data by id single data
         app.get('/jobs/:id', async (req, res) => {
@@ -60,6 +60,14 @@ async function run() {
             const result = await allJobsCollection.findOne(query);
             res.send(result);
         });
+        // add a job
+        app.post('/jobs', async (req, res) => {
+            const newJob = req.body;
+            const result = await allJobsCollection.insertOne(newJob);
+            res.send(result)
+        })
+
+
 
         // application related api
         // get some data by  query
@@ -69,12 +77,12 @@ async function run() {
             const result = await jobApplicationCollection.find(query).toArray();
 
             // not the best way to aggregate data
-            for(const application of result){
-                console.log(application.job_id);
-                const queryForMyApplication = { _id: new ObjectId(application.job_id)};
+            for (const application of result) {
+
+                const queryForMyApplication = { _id: new ObjectId(application.job_id) };
                 const resultForMyApplication = await allJobsCollection.findOne(queryForMyApplication);
 
-                if(resultForMyApplication){
+                if (resultForMyApplication) {
                     application.title = resultForMyApplication.title;
                     application.company = resultForMyApplication.company;
                     application.location = resultForMyApplication.location;
@@ -84,17 +92,56 @@ async function run() {
 
             res.send(result)
         });
+        // employer need to know who apply for the job
+        app.get('/job-application/jobs/:job_id', async (req, res) => {
+            const jobId = req.params.job_id;
+            const query = { job_id: jobId };
+            const result = await jobApplicationCollection.find(query).toArray();
+            res.send(result)
 
-        app.post('/job-applications', async (req, res) => {
-            const application = req.body;
-            console.log(application);
-            const result = await jobApplicationCollection.insertOne(application);
-            res.send(result);
         })
 
 
 
+        app.post('/job-applications', async (req, res) => {
+            const application = req.body;
 
+            const result = await jobApplicationCollection.insertOne(application);
+            // not the best wait (use aggregate)
+            const id = application.job_id;
+            const query = { _id: new ObjectId(id) };
+            const job = await allJobsCollection.findOne(query);
+            let newCount = 0;
+            if (job.applicationCount) {
+                newCount = job.applicationCount + 1;
+            } else {
+                newCount = 1;
+            }
+            // now update the job info
+
+            const filter = { _id: new ObjectId(id) };
+            const updatedDoc = {
+                $set: {
+                    applicationCount: newCount
+                }
+            }
+            const updatedResult = await allJobsCollection.updateOne(filter, updatedDoc);
+
+            res.send(result);
+        });
+
+        app.patch('/job-applications/:id', async(req,res)=>{
+            const id = req.params.id;
+            const data = req.body;
+            const filter = {_id : new ObjectId(id)};
+            const updatedDoc = {
+                $set:{
+                    status: data.status
+                }
+            }
+            const result = await jobApplicationCollection.updateOne(filter, updatedDoc);
+            res.send(result);
+        })
 
     } finally {
         // Ensures that the client will close when you finish/error
