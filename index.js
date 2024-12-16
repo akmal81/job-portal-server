@@ -1,18 +1,27 @@
 require('dotenv').config()
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 const port = process.env.PORT || 5000;
 const { MongoClient,
     ServerApiVersion,
     ObjectId
 } = require('mongodb');
+const cookieParser = require('cookie-parser');
 
 // call express in the app const
 const app = express();
 
-// middleware
+app.use(cors({
+    origin: ['http://localhost:5173'],
+    credentials: true
+}));
 app.use(express.json());
-app.use(cors())
+app.use(cookieParser())
+
+
+
+
 
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.226ep.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -38,11 +47,44 @@ async function run() {
         const allJobsCollection = client.db("job-portal-main").collection("allJobs");
         const jobApplicationCollection = client.db("job-portal-main").collection("applications")
 
+        // Auth related APIS
+
+        app.use('/jwt', async (req, res) => {
+            const user = req.body;
+            const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '5h' });
+            res.cookie('token', token, {
+                httpOnly: true,
+                secure: false
+            })
+                .send({ success: true })
+        })
+
+        app.post('/logout', (req, res) => {
+            res.clearCookie('token', {
+                httpOnly: true,
+                secure: false
+            })
+                .send({ success: true })
+        })
+
+        // app.post('/jwt', async (req, res) => {
+        //     const user = req.body;
+        //     const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, { expiresIn: '5h' });
+
+        //     res.
+        //         cookie('token', token, {
+        //             httpOnly: true,
+        //             secure: false,
+        //         })
+        //         .send({ success: true });
+        // })
+
         // do not load all data in home page
 
         // job related api
         //  all data or get data by hr_email address
         app.get('/jobs', async (req, res) => {
+            console.log('now in the api callback');
             const email = req.query.email;
             let query = {};
             if (email) {
@@ -75,8 +117,6 @@ async function run() {
             const email = req.query.email;
             const query = { applicant_email: email };
             const result = await jobApplicationCollection.find(query).toArray();
-
-            // not the best way to aggregate data
             for (const application of result) {
 
                 const queryForMyApplication = { _id: new ObjectId(application.job_id) };
@@ -130,12 +170,12 @@ async function run() {
             res.send(result);
         });
 
-        app.patch('/job-applications/:id', async(req,res)=>{
+        app.patch('/job-applications/:id', async (req, res) => {
             const id = req.params.id;
             const data = req.body;
-            const filter = {_id : new ObjectId(id)};
+            const filter = { _id: new ObjectId(id) };
             const updatedDoc = {
-                $set:{
+                $set: {
                     status: data.status
                 }
             }
